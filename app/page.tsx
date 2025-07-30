@@ -53,7 +53,7 @@ interface BlockDurationOption {
 }
 
 export default function TimeTracker() {
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isTimerRunning, setIsTimerRunning] = useState(false)
   const [currentTask, setCurrentTask] = useState<any>(null)
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([])
@@ -163,17 +163,25 @@ export default function TimeTracker() {
       }
     })
 
+    console.log("Generated time blocks:", blocks.length, "blocks")
     setTimeBlocks(blocks)
   }, [calendarEvents, blockDurationMinutes])
 
+  // Initialize current time on client side to avoid hydration mismatch
+  useEffect(() => {
+    setCurrentTime(new Date())
+  }, [])
+
   // Update current time and handle block transitions
   useEffect(() => {
+    if (!currentTime) return
+    
     const timer = setInterval(() => {
       const now = new Date()
       const prevTime = currentTime
       setCurrentTime(now)
 
-      const currentBlockId = getCurrentBlockId()
+      const currentBlockId = getCurrentBlockId(now)
       const prevBlockId = getCurrentBlockId(prevTime) // Get previous block ID
 
       // Check if we've moved to a new block
@@ -195,21 +203,32 @@ export default function TimeTracker() {
           handleBlockCompletion(prevBlock, currentBlockId)
           return // Don't auto-start next block yet
         }
+        
+        // Also trigger completion for blocks with real tasks (not pause/disruption), even if not marked as active
+        if (prevBlock && 
+            prevBlock.task && 
+            !prevBlock.task.title?.includes("Paused") && 
+            !prevBlock.task.title?.includes("Disrupted") && 
+            isTimerRunning) {
+          console.log("Triggering block completion for task block:", prevBlockId, prevBlock.task.title)
+          handleBlockCompletion(prevBlock, currentBlockId)
+          return // Don't auto-start next block yet
+        }
       }
 
-      // Auto-start timer for current block only if no progress check is active
+      // Auto-start timer for current block if it has a real task and timer isn't running
       const currentBlock = timeBlocks.find((b) => b.id === currentBlockId)
-      const totalMinutes = now.getHours() * 60 + now.getMinutes()
-      const seconds = now.getSeconds()
-
+      
       if (
-        seconds === 0 &&
-        totalMinutes % blockDurationMinutes === 0 &&
         currentBlock &&
+        currentBlock.task &&
+        !currentBlock.task.title?.includes("Paused") &&
+        !currentBlock.task.title?.includes("Disrupted") &&
         !isTimerRunning &&
-        !showProgressCheck
+        !showProgressCheck &&
+        !currentBlock.isActive
       ) {
-        console.log("Auto-starting timer for block:", currentBlockId)
+        console.log("Auto-starting timer for task block:", currentBlockId, currentBlock.task.title)
         setIsTimerRunning(true)
         setTimerSeconds(0)
         setTimeBlocks((prev) =>
@@ -282,7 +301,7 @@ export default function TimeTracker() {
 
   const getBlockTimeStatus = (blockId: string) => {
     const now = new Date()
-    const currentBlockId = getCurrentBlockId()
+    const currentBlockId = getCurrentBlockId(now)
     const [hour, minute] = blockId.split("-").map(Number)
     const blockTime = new Date()
     blockTime.setHours(hour, minute, 0, 0)
@@ -356,7 +375,7 @@ export default function TimeTracker() {
 
   const startTimer = () => {
     setIsTimerRunning(true)
-    const currentBlockId = getCurrentBlockId()
+    const currentBlockId = getCurrentBlockId(currentTime || new Date())
     setTimeBlocks((prev) =>
       prev.map((block) => (block.id === currentBlockId ? { ...block, isActive: true } : { ...block, isActive: false })),
     )
@@ -369,13 +388,13 @@ export default function TimeTracker() {
   const stopTimer = () => {
     setIsTimerRunning(false)
     setTimerSeconds(0)
-    const currentBlockId = getCurrentBlockId()
+    const currentBlockId = getCurrentBlockId(currentTime || new Date())
     setTimeBlocks((prev) =>
       prev.map((block) => (block.id === currentBlockId ? { ...block, isActive: false, isCompleted: true } : block)),
     )
   }
 
-  const currentBlockId = getCurrentBlockId()
+  const currentBlockId = getCurrentBlockId(currentTime || new Date())
   const currentBlock = timeBlocks.find((b) => b.id === currentBlockId)
 
   const getRemainingTime = (block: TimeBlock) => {
@@ -569,7 +588,7 @@ export default function TimeTracker() {
     setProgressCheckTimer(null)
 
     // Start next block normally
-    const currentBlockId = getCurrentBlockId()
+    const currentBlockId = getCurrentBlockId(currentTime || new Date())
     setIsTimerRunning(true)
     setTimerSeconds(0)
     setTimeBlocks((prev) =>
@@ -585,7 +604,7 @@ export default function TimeTracker() {
     if (!completedBlock?.task) return
 
     // Continue with same task in next block and push all future tasks forward
-    const currentBlockId = getCurrentBlockId()
+    const currentBlockId = getCurrentBlockId(currentTime || new Date())
     const currentBlockIndex = getBlockIndex(currentBlockId)
 
     const { updatedBlocks } = pushTasksForward(currentBlockIndex)
@@ -725,7 +744,7 @@ export default function TimeTracker() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Time Tracker</h1>
             <p className="text-gray-600">
-              {currentTime.toLocaleDateString()} - {currentTime.toLocaleTimeString()}
+              {currentTime ? `${currentTime.toLocaleDateString()} - ${currentTime.toLocaleTimeString()}` : 'Loading...'}
             </p>
             <p className="text-xs text-gray-400">
               Current Block: {currentBlockId} | Timer: {isTimerRunning ? "ON" : "OFF"} | Popup:{" "}
@@ -750,9 +769,9 @@ export default function TimeTracker() {
             <Button
               variant="outline"
               onClick={() => {
-                const testBlock = timeBlocks.find((b) => b.id === getCurrentBlockId())
-                if (testBlock) {
-                  handleBlockCompletion(testBlock, getCurrentBlockId())
+                              const testBlock = timeBlocks.find((b) => b.id === getCurrentBlockId(currentTime || new Date()))
+              if (testBlock) {
+                handleBlockCompletion(testBlock, getCurrentBlockId(currentTime || new Date()))
                 }
               }}
               className="flex items-center gap-2 bg-red-100"
@@ -1137,7 +1156,7 @@ export default function TimeTracker() {
           completedBlock={completedBlockId ? timeBlocks.find((b) => b.id === completedBlockId) : null}
           onDone={handleProgressDone}
           onStillDoing={handleProgressStillDoing}
-          onTimeout={() => handleProgressTimeout(getCurrentBlockId())}
+                        onTimeout={() => handleProgressTimeout(getCurrentBlockId(currentTime || new Date()))}
         />
       </div>
     </div>

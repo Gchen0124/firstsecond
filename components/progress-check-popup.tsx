@@ -65,11 +65,17 @@ export default function ProgressCheckPopup({
     return () => clearInterval(timer)
   }, [isOpen, onTimeout])
 
-  const currentTime = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  })
+  const [currentTime, setCurrentTime] = useState<string>("")
+
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentTime(new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }))
+    }
+  }, [isOpen])
 
   const speakMessage = (message: string) => {
     if ("speechSynthesis" in window) {
@@ -88,7 +94,6 @@ export default function ProgressCheckPopup({
           "max-w-md transition-all duration-300",
           isUrgent ? "border-red-500 border-2 animate-pulse" : "border-blue-500 border-2",
         )}
-        hideCloseButton
       >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
@@ -110,7 +115,7 @@ export default function ProgressCheckPopup({
         <div className="space-y-6">
           {/* Current Time Display */}
           <div className="text-center">
-            <div className="text-2xl font-mono font-bold text-gray-900">{currentTime}</div>
+            <div className="text-2xl font-mono font-bold text-gray-900">{currentTime || "Loading..."}</div>
             <div className="text-sm text-gray-500 mt-1">Current Time</div>
           </div>
 
